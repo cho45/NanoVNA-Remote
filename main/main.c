@@ -13,6 +13,7 @@
 
 #include "sdkconfig.h"
 #include "driver/gpio.h"
+#include "driver/uart.h"
 
 #include "esp_system.h"
 #include "esp_wifi.h"
@@ -36,6 +37,8 @@
 
 static const char *TAG = "example";
 static esp_netif_t *netif_ap = NULL;
+
+extern void ws_broadcast(uint8_t* data, size_t len);
 
 esp_err_t start_rest_server(const char *base_path);
 
@@ -155,6 +158,46 @@ esp_err_t init_fs(void)
 }
 #endif
 
+static void uart_rx_task(void *arg)
+{
+    uart_config_t uart_config = {
+        // .baud_rate = 115200,
+        .baud_rate = 460800,
+        .data_bits = UART_DATA_8_BITS,
+        .parity    = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_CTS_RTS,
+        .source_clk = UART_SCLK_APB,
+    };
+    int intr_alloc_flags = 0;
+
+    const size_t BUF_SIZE = 128;
+
+    int rx_buffer_size = BUF_SIZE * 2;
+    int tx_buffer_size = 0;
+    int queue_size = 0;
+    QueueHandle_t queue_handle = NULL;
+    ESP_ERROR_CHECK(uart_driver_install(UART_NUM_2, rx_buffer_size, tx_buffer_size, queue_size, queue_handle, intr_alloc_flags));
+    ESP_ERROR_CHECK(uart_param_config(UART_NUM_2, &uart_config));
+    // Set UART pins(TX: IO16, RX: IO17, RTS: IO18, CTS: IO19)
+    ESP_ERROR_CHECK(uart_set_pin(UART_NUM_2, 16, 17, 18, 19));
+
+    uint8_t *data = (uint8_t *) malloc(BUF_SIZE);
+
+    while (1) {
+        // Read data from the UART
+        int len = uart_read_bytes(UART_NUM_2, data, BUF_SIZE, 20 / portTICK_RATE_MS);
+        if (len > 0) {
+            data[len] = 0;
+            ESP_LOGI(TAG, "uart read bytes %s", data);
+            // Write data back to the UART
+            // uart_write_bytes(UART_NUM_2, (const char *) data, len);
+            ws_broadcast(data, len);
+        }
+    }
+}
+
+
 void app_main(void)
 {
     ESP_ERROR_CHECK(nvs_flash_init());
@@ -164,12 +207,15 @@ void app_main(void)
     netbiosns_init();
     netbiosns_set_name(CONFIG_EXAMPLE_MDNS_HOST_NAME);
 
-    if (0) {
+    if (1) {
         ESP_ERROR_CHECK(example_connect());
     } else {
         ESP_LOGI(TAG, "ESP_WIFI_MODE_AP");
         wifi_init_softap();
     }
+
+    const size_t UART_TASK_STACK_SIZE = 2048;
+    xTaskCreate(uart_rx_task, "uart_rx_task", UART_TASK_STACK_SIZE, NULL, 10, NULL);
 
     ESP_ERROR_CHECK(init_fs());
     ESP_ERROR_CHECK(start_rest_server(CONFIG_EXAMPLE_WEB_MOUNT_POINT));
