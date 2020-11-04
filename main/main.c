@@ -189,7 +189,7 @@ static void uart_rx_task(void *arg)
         int len = uart_read_bytes(UART_NUM_2, data, BUF_SIZE, 20 / portTICK_RATE_MS);
         if (len > 0) {
             data[len] = 0;
-            ESP_LOGI(TAG, "uart read bytes %s", data);
+            ESP_LOGI(TAG, "uart read bytes %d", len);
             // Write data back to the UART
             // uart_write_bytes(UART_NUM_2, (const char *) data, len);
             ws_broadcast(data, len);

@@ -114,7 +114,7 @@ static esp_err_t ws_handler(httpd_req_t *req)
 	}
 	*/
 
-	ESP_LOGI(TAG, "uart write bytes %s", ws_pkt.payload);
+	ESP_LOGI(TAG, "uart write bytes %d", ws_pkt.len);
 	uart_write_bytes(UART_NUM_2, (const char *) ws_pkt.payload, ws_pkt.len);
 
 	return ret;
