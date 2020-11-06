@@ -35,12 +35,15 @@
 #define EXAMPLE_ESP_WIFI_CHANNEL   1
 #define EXAMPLE_MAX_STA_CONN       1
 
-static const char *TAG = "example";
-static esp_netif_t *netif_ap = NULL;
+#define WWW_MOUNT_POINT "/www"
 
-extern void ws_broadcast(uint8_t* data, size_t len);
+esp_netif_t *netif_ap = NULL;
 
+static const char *TAG = "main";
+
+void ws_broadcast(uint8_t* data, size_t len);
 esp_err_t start_rest_server(const char *base_path);
+esp_err_t start_dns_server();
 
 static void initialise_mdns(void)
 {
@@ -125,11 +128,10 @@ void wifi_init_softap(void)
     ESP_LOGI(TAG, "sip=%d.%d.%d.%d", sip&0xFF, (sip>>8)&0xFF, (sip>>16)&0xFF, (sip>>24)&0xFF);
 }
 
-#if CONFIG_EXAMPLE_WEB_DEPLOY_SF
 esp_err_t init_fs(void)
 {
     esp_vfs_spiffs_conf_t conf = {
-        .base_path = CONFIG_EXAMPLE_WEB_MOUNT_POINT,
+        .base_path = WWW_MOUNT_POINT,
         .partition_label = NULL,
         .max_files = 5,
         .format_if_mount_failed = false
@@ -156,13 +158,13 @@ esp_err_t init_fs(void)
     }
     return ESP_OK;
 }
-#endif
 
 static void uart_rx_task(void *arg)
 {
     uart_config_t uart_config = {
         // .baud_rate = 115200,
-        .baud_rate = 460800,
+        // .baud_rate = 460800,
+        .baud_rate = 921600,
         .data_bits = UART_DATA_8_BITS,
         .parity    = UART_PARITY_DISABLE,
         .stop_bits = UART_STOP_BITS_1,
@@ -176,7 +178,7 @@ static void uart_rx_task(void *arg)
     int rx_buffer_size = BUF_SIZE * 2;
     int tx_buffer_size = 0;
     int queue_size = 0;
-    QueueHandle_t queue_handle = NULL;
+    QueueHandle_t* queue_handle = NULL;
     ESP_ERROR_CHECK(uart_driver_install(UART_NUM_2, rx_buffer_size, tx_buffer_size, queue_size, queue_handle, intr_alloc_flags));
     ESP_ERROR_CHECK(uart_param_config(UART_NUM_2, &uart_config));
     // Set UART pins(TX: IO16, RX: IO17, RTS: IO18, CTS: IO19)
@@ -189,7 +191,7 @@ static void uart_rx_task(void *arg)
         int len = uart_read_bytes(UART_NUM_2, data, BUF_SIZE, 20 / portTICK_RATE_MS);
         if (len > 0) {
             data[len] = 0;
-            ESP_LOGI(TAG, "uart read bytes %d", len);
+            ESP_LOGI(TAG, "uart read bytes %d %s", len, data);
             // Write data back to the UART
             // uart_write_bytes(UART_NUM_2, (const char *) data, len);
             ws_broadcast(data, len);
@@ -200,6 +202,14 @@ static void uart_rx_task(void *arg)
 
 void app_main(void)
 {
+	gpio_config_t io_conf;
+	io_conf.pin_bit_mask = (1ULL<<GPIO_NUM_15);
+	io_conf.mode = GPIO_MODE_INPUT;
+	io_conf.pull_up_en = 1;
+	io_conf.pull_down_en = 0;
+	io_conf.intr_type = GPIO_INTR_DISABLE;
+	gpio_config(&io_conf);
+
     ESP_ERROR_CHECK(nvs_flash_init());
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
@@ -207,7 +217,8 @@ void app_main(void)
     netbiosns_init();
     netbiosns_set_name(CONFIG_EXAMPLE_MDNS_HOST_NAME);
 
-    if (1) {
+
+    if (gpio_get_level(GPIO_NUM_15)) {
         ESP_ERROR_CHECK(example_connect());
     } else {
         ESP_LOGI(TAG, "ESP_WIFI_MODE_AP");
@@ -218,5 +229,6 @@ void app_main(void)
     xTaskCreate(uart_rx_task, "uart_rx_task", UART_TASK_STACK_SIZE, NULL, 10, NULL);
 
     ESP_ERROR_CHECK(init_fs());
-    ESP_ERROR_CHECK(start_rest_server(CONFIG_EXAMPLE_WEB_MOUNT_POINT));
+    ESP_ERROR_CHECK(start_rest_server(WWW_MOUNT_POINT));
+    ESP_ERROR_CHECK(start_dns_server());
 }

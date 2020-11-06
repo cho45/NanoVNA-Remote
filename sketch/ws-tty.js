@@ -8,19 +8,21 @@ client.onerror = function() {
 	console.log('Connection Error');
 };
 
-client.onopen = function() {
+client.onopen = function () {
 	console.log('WebSocket Connected');
 };
 
-client.onclose = function() {
-	console.log('Client Closed');
+client.onclose = function (e) {
+	console.log('Client Closed', e);
 };
 
 client.onmessage = function(e) {
 	if (typeof e.data === 'string') {
 		process.stdout.write(e.data);
 	} else {
-		console.log(e.data);
+		const string = String.fromCharCode.apply("", new Uint8Array(e.data))
+		process.stdout.write(string);
+		// console.log(typeof e.data, e.data);
 	}
 };
 
