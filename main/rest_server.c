@@ -42,11 +42,27 @@ typedef struct rest_server_context {
 struct async_resp_arg {
 	httpd_handle_t hd;
 	int fd;
-	uint8_t data[128];
+	uint8_t data[1024];
 	size_t data_len;
 };
 
 static httpd_handle_t server;
+
+/*
+ * async send function, which we put into the httpd work queue
+ */
+static void ws_async_send(void *arg)
+{
+	struct async_resp_arg *resp_arg = arg;
+	httpd_ws_frame_t ws_pkt;
+	memset(&ws_pkt, 0, sizeof(httpd_ws_frame_t));
+	ws_pkt.payload = resp_arg->data;
+	ws_pkt.len = resp_arg->data_len;
+	ws_pkt.type = HTTPD_WS_TYPE_BINARY;
+
+	httpd_ws_send_frame_async(resp_arg->hd, resp_arg->fd, &ws_pkt);
+	free(resp_arg);
+}
 
 void ws_broadcast(uint8_t* data, size_t len)
 {
@@ -59,13 +75,23 @@ void ws_broadcast(uint8_t* data, size_t len)
 			int sock = client_fds[i];
 			if (httpd_ws_get_fd_info(server, sock) == HTTPD_WS_CLIENT_WEBSOCKET) {
 				ESP_LOGI(TAG, "client (fd=%d) -> sending async len=%d", sock, len);
-				httpd_ws_frame_t ws_pkt;
-				memset(&ws_pkt, 0, sizeof(httpd_ws_frame_t));
-				ws_pkt.payload = data;
-				ws_pkt.len = len;
-				ws_pkt.type = HTTPD_WS_TYPE_BINARY;
+//				httpd_ws_frame_t ws_pkt;
+//				memset(&ws_pkt, 0, sizeof(httpd_ws_frame_t));
+//				ws_pkt.payload = data;
+//				ws_pkt.len = len;
+//				ws_pkt.type = HTTPD_WS_TYPE_BINARY;
+//				httpd_ws_send_frame_async(server, sock, &ws_pkt);
 
-				httpd_ws_send_frame_async(server, sock, &ws_pkt);
+				struct async_resp_arg *resp_arg = malloc(sizeof(struct async_resp_arg));
+				resp_arg->hd = server;
+				resp_arg->fd = sock;
+				resp_arg->data_len = len;
+				memcpy(resp_arg->data, data, len);
+				if (httpd_queue_work(resp_arg->hd, ws_async_send, resp_arg) != ESP_OK) {
+					ESP_LOGE(TAG, "httpd_queue_work failed!");
+					free(resp_arg);
+					break;
+				}
 			}
 		}
 	} else {

@@ -158,7 +158,7 @@ static void uart_rx_task(void *arg) {
 	};
 	int intr_alloc_flags = 0;
 
-	const size_t BUF_SIZE = 512;
+	const size_t BUF_SIZE = 1024;
 
 	int rx_buffer_size = BUF_SIZE * 2;
 	int tx_buffer_size = 0;
@@ -171,33 +171,16 @@ static void uart_rx_task(void *arg) {
 
 	uint8_t *data = (uint8_t *) malloc(BUF_SIZE);
 
-	TickType_t prevTick = xTaskGetTickCount();
-	size_t total_len = 0;
-
 	while (1) {
 		// Read data from the UART
-		int len = uart_read_bytes(UART_NUM_2, data + total_len, BUF_SIZE - total_len, 20 / portTICK_RATE_MS);
+		int len = uart_read_bytes(UART_NUM_2, data, BUF_SIZE, 20 / portTICK_RATE_MS);
 		if (len > 0) {
-			ESP_LOGI(TAG, "uart read bytes %d", len);
+			data[len] = 0;
 			// ESP_LOGI(TAG, "uart read bytes %d %s", len, data);
-			total_len += len;
-		}
-
-		if (total_len == 0) {
-			continue;
-		}
-
-		if (
-			total_len >= BUF_SIZE || (
-				(xTaskGetTickCount() - prevTick) * portTICK_RATE_MS > 20
-			)
-		) {
+			ESP_LOGI(TAG, "uart read bytes %d", len);
 			// Write data back to the UART
 			// uart_write_bytes(UART_NUM_2, (const char *) data, len);
-			data[total_len] = 0;
-			ESP_LOGI(TAG, "ws write %d %s", total_len, data);
-			ws_broadcast(data, total_len);
-			total_len = 0;
+			ws_broadcast(data, len);
 		}
 	}
 }
