@@ -48,22 +48,6 @@ struct async_resp_arg {
 
 static httpd_handle_t server;
 
-/*
- * async send function, which we put into the httpd work queue
- */
-static void ws_async_send(void *arg)
-{
-	struct async_resp_arg *resp_arg = arg;
-	httpd_ws_frame_t ws_pkt;
-	memset(&ws_pkt, 0, sizeof(httpd_ws_frame_t));
-	ws_pkt.payload = resp_arg->data;
-	ws_pkt.len = resp_arg->data_len;
-	ws_pkt.type = HTTPD_WS_TYPE_BINARY;
-
-	httpd_ws_send_frame_async(resp_arg->hd, resp_arg->fd, &ws_pkt);
-	free(resp_arg);
-}
-
 void ws_broadcast(uint8_t* data, size_t len)
 {
 	if (!server) return;
@@ -82,16 +66,6 @@ void ws_broadcast(uint8_t* data, size_t len)
 				ws_pkt.type = HTTPD_WS_TYPE_BINARY;
 
 				httpd_ws_send_frame_async(server, sock, &ws_pkt);
-//				struct async_resp_arg *resp_arg = malloc(sizeof(struct async_resp_arg));
-//				resp_arg->hd = server;
-//				resp_arg->fd = sock;
-//				resp_arg->data_len = len;
-//				memcpy(resp_arg->data, data, len);
-//				if (httpd_queue_work(resp_arg->hd, ws_async_send, resp_arg) != ESP_OK) {
-//					ESP_LOGE(TAG, "httpd_queue_work failed!");
-//					free(resp_arg);
-//					break;
-//				}
 			}
 		}
 	} else {
@@ -113,8 +87,7 @@ static esp_err_t ws_handler(httpd_req_t *req)
 		ESP_LOGE(TAG, "httpd_ws_recv_frame failed with %d", ret);
 		return ret;
 	}
-	ESP_LOGI(TAG, "Got packet with message: %s", ws_pkt.payload);
-	ESP_LOGI(TAG, "Packet type: %d", ws_pkt.type);
+	ESP_LOGI(TAG, "ws packet %d:%d", ws_pkt.type, ws_pkt.len);
 
 	/*
 	// echo test
@@ -125,7 +98,8 @@ static esp_err_t ws_handler(httpd_req_t *req)
 	*/
 
 	buf[ws_pkt.len] = 0;
-	ESP_LOGI(TAG, "uart write bytes %d %s", ws_pkt.len, buf);
+	// ESP_LOGI(TAG, "uart write bytes %d %s", ws_pkt.len, buf);
+	ESP_LOGI(TAG, "uart write bytes %d", ws_pkt.len);
 	uart_write_bytes(UART_NUM_2, (const char *) ws_pkt.payload, ws_pkt.len);
 
 	return ret;

@@ -35,8 +35,8 @@
 #define DNS_FLAGS_OPCODE(flags) ((flags>>11)&0b1111)
 #define DNS_FLAGS_QR(flags) ((flags>>15)&0b1)
 
-#define DNS_FLAGS_RA (1<<7)
-#define DNS_FLAGS_RD (1<<8)
+#define DNS_FLAGS_RA_ON (1<<7)
+#define DNS_FLAGS_RD_ON (1<<8)
 #define DNS_FLAGS_QR_QUERY (0<<15)
 #define DNS_FLAGS_QR_RESPONSE (1<<15)
 
@@ -172,20 +172,26 @@ static void udp_server_task() {
 					esp_netif_get_ip_info(netif_ap, &ip_info);
 					uint32_t sip = ip_info.ip.addr;
 
-					header.FLAGS = DNS_FLAGS_QR_RESPONSE | DNS_FLAGS_RA | DNS_FLAGS_RD;
+					// write header
+					header.FLAGS = DNS_FLAGS_QR_RESPONSE | DNS_FLAGS_RA_ON | DNS_FLAGS_RD_ON;
 					header.QDCOUNT = 1;
 					header.ANCOUNT = 1;
 					header.NSCOUNT = 0;
 					header.ARCOUNT = 0;
 					dns_write_header(rx_buffer, &header);
 					len = sizeof(header);
+
+					// question section
+					// (same as request. so just increment pointer)
 					// domain_len + type + class
 					len += domain_len + 2 + 2;
 
-					// copy query
+					// answer section
+					// copy query domain, type and class
 					memcpy(rx_buffer + len, domain, domain_len + 2 + 2);
 					len += domain_len + 2 + 2;
 
+					// write A type suffix data
 					dns_resource_a_t resource;
 					resource.TTL = 300;
 					resource.RDLENGTH = 4;
