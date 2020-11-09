@@ -25,7 +25,7 @@
 #define EXAMPLE_ESP_WIFI_SSID      "NanoVNA"
 #define EXAMPLE_ESP_WIFI_PASS      "madakimetenai"
 #define EXAMPLE_ESP_WIFI_CHANNEL   1
-#define EXAMPLE_MAX_STA_CONN       1
+#define EXAMPLE_MAX_STA_CONN       2
 
 #define WWW_MOUNT_POINT "/www"
 
@@ -149,7 +149,8 @@ static void uart_rx_task(void *arg) {
 	uart_config_t uart_config = {
 		// .baud_rate = 115200,
 		// .baud_rate = 460800,
-		.baud_rate = 921600,
+		// .baud_rate = 921600,
+		.baud_rate = 4000000,
 		.data_bits = UART_DATA_8_BITS,
 		.parity    = UART_PARITY_DISABLE,
 		.stop_bits = UART_STOP_BITS_1,

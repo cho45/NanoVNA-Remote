@@ -12,6 +12,7 @@
 #include "esp_system.h"
 #include "esp_log.h"
 #include "esp_vfs.h"
+#include "esp_wifi.h"
 #include "cJSON.h"
 #include "driver/uart.h"
 #include "esp_ota_ops.h"
@@ -168,7 +169,15 @@ static esp_err_t set_content_type_from_file(httpd_req_t *req, const char *filepa
 static esp_err_t rest_common_get_handler(httpd_req_t *req)
 {
 	char filepath[FILE_PATH_MAX];
+	char etag[26];
 	bool is_gzip = 0;
+	rest_server_context_t *rest_context = (rest_server_context_t *)req->user_ctx;
+
+	// memo: ETag can be same for different resources.
+	const esp_app_desc_t* app_desc = esp_ota_get_app_description();
+	strlcpy(etag, app_desc->date, sizeof(etag));
+	strlcat(etag, app_desc->time, sizeof(etag));
+	strlcat(etag, app_desc->version, sizeof(etag));
 
 	// use filepath for temporary buffer
 	esp_err_t err = httpd_req_get_hdr_value_str(req, "Host", filepath, sizeof(filepath));
@@ -188,7 +197,15 @@ static esp_err_t rest_common_get_handler(httpd_req_t *req)
 		return httpd_resp_send(req, "see other", HTTPD_RESP_USE_STRLEN);
 	}
 
-	rest_server_context_t *rest_context = (rest_server_context_t *)req->user_ctx;
+	// use filepath for temporary buffer
+	if (httpd_req_get_hdr_value_str(req, "If-None-Match", filepath, sizeof(filepath)) == ESP_OK) {
+		if (strncmp(filepath, etag, strlen(app_desc->version)) == 0) {
+			ESP_LOGI(TAG, "If-None-Match '%s' == '%s'. returns 304 for %s", filepath, etag, req->uri);
+			httpd_resp_set_status(req, "304 Not Modified");
+			return httpd_resp_send(req, NULL, 0);
+		}
+	}
+
 	strlcpy(filepath, rest_context->base_path, sizeof(filepath));
 	if (req->uri[strlen(req->uri) - 1] == '/') {
 		strlcat(filepath, "/index.html", sizeof(filepath));
@@ -213,10 +230,14 @@ static esp_err_t rest_common_get_handler(httpd_req_t *req)
 		is_gzip = 1;
 	}
 
+
 	set_content_type_from_file(req, filepath);
 	if (is_gzip) {
 		httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
 	}
+
+	// send etag for client caching
+	httpd_resp_set_hdr(req, "ETag", etag);
 
 	ESP_LOGI(TAG, "File sending %s", filepath);
 
@@ -283,6 +304,8 @@ static esp_err_t rest_common_get_handler(httpd_req_t *req)
 /* Simple handler for getting system handler */
 static esp_err_t system_info_get_handler(httpd_req_t *req)
 {
+	rest_server_context_t *rest_context = (rest_server_context_t *)req->user_ctx;
+
 	httpd_resp_set_type(req, "application/json");
 
 	esp_chip_info_t chip_info;
@@ -313,6 +336,26 @@ static esp_err_t system_info_get_handler(httpd_req_t *req)
 		case ESP_RST_SDIO: cJSON_AddStringToObject(root, "reset_reason", "SDIO"); break;
 	}
 
+	wifi_sta_list_t sta_list;
+	char *scratch = rest_context->scratch;
+	if (ESP_OK == esp_wifi_ap_get_sta_list(&sta_list)) {
+		cJSON* list = cJSON_AddArrayToObject(root, "stations");
+		for (int i = 0; i < sta_list.num; i++) {
+			cJSON* sta  = cJSON_CreateObject();
+			snprintf(scratch, SCRATCH_BUFSIZE, "%02x:%02x:%02x:%02x:%02x:%02x",
+				sta_list.sta[i].mac[0],
+				sta_list.sta[i].mac[1],
+				sta_list.sta[i].mac[2],
+				sta_list.sta[i].mac[3],
+				sta_list.sta[i].mac[4],
+				sta_list.sta[i].mac[5]
+			);
+			cJSON_AddStringToObject(sta, "mac", scratch);
+			cJSON_AddNumberToObject(sta, "rssi", sta_list.sta[i].rssi);
+			cJSON_AddItemToArray(list, sta);
+		}
+	}
+
 	const char *sys_info = cJSON_Print(root);
 	httpd_resp_sendstr(req, sys_info);
 	free((void *)sys_info);
@@ -336,8 +379,8 @@ esp_err_t start_rest_server(const char *base_path)
 		.max_open_sockets   = MAX_OPEN_SOCKETS,
 		.max_uri_handlers   = 8,
 		.max_resp_headers   = 8,
-		.backlog_conn       = 5,
-		.lru_purge_enable   = true,
+		.backlog_conn       = 7,
+		.lru_purge_enable   = false,
 		.recv_wait_timeout  = 5,
 		.send_wait_timeout  = 5,
 		.global_user_ctx = NULL,
