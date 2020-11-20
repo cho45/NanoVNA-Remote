@@ -1,5 +1,12 @@
 # NanoVNA Wi-Fi connection impl.
 
+<img src="./docs/example.jpg"/>
+
+## Schematic
+
+ * ./cdc-to-websocket/cdc-to-websocket.svg
+ * STM32F401 firmware: https://github.com/cho45/stm32f401-usbserial-host
+
 ## Configure Wi-Fi Mode (AP or Station)
 
 IO15 is pulled-up input
